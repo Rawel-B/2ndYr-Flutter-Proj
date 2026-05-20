@@ -11,6 +11,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final firebaseReady = await FirebaseBootstrap.tryInitialize();
   final repository = DemoRepository(firebaseReady: firebaseReady);
+  await repository.loadFirebaseData();
 
   runApp(FlutterTrelloApp(repository: repository));
 }

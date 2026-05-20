@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "894523733372",
+    "project_id": "main-2ad03",
+    "storage_bucket": "main-2ad03.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:894523733372:android:3fd7c893a17fd0069d20f9",
+        "android_client_info": {
+          "package_name": "com.example.flutter_trello"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdxnJF5BMdScecl7ksaE6evVFHOlcZZIA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

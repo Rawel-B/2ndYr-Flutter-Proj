@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/activity.dart';
@@ -13,6 +17,7 @@ class DemoRepository {
   }
 
   final bool firebaseReady;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
   final _uuid = const Uuid();
   final List<AppUser> _users = [];
   final List<Project> _projects = [];
@@ -25,6 +30,39 @@ class DemoRepository {
       _activity.where((item) => item.projectId == projectId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   List<AppNotification> get notifications => List.unmodifiable(_notifications);
+
+  Future<void> loadFirebaseData() async {
+    if (!firebaseReady) return;
+
+    try {
+      final usersSnapshot = await _firestore.collection('users').get();
+      final projectsSnapshot = await _firestore.collection('projects').get();
+      final notificationsSnapshot = await _firestore.collection('notifications').get();
+      final activitySnapshot = await _firestore.collectionGroup('activity').get();
+
+      if (usersSnapshot.docs.isEmpty && projectsSnapshot.docs.isEmpty) {
+        await _saveSeedData();
+        return;
+      }
+
+      _users
+        ..clear()
+        ..addAll(usersSnapshot.docs.map((doc) => _userFromMap(doc.id, doc.data())));
+      _projects
+        ..clear()
+        ..addAll(projectsSnapshot.docs.map((doc) => _projectFromMap(doc.id, doc.data())));
+      _notifications
+        ..clear()
+        ..addAll(
+          notificationsSnapshot.docs.map((doc) => _notificationFromMap(doc.id, doc.data())),
+        );
+      _activity
+        ..clear()
+        ..addAll(activitySnapshot.docs.map((doc) => _activityFromMap(doc.id, doc.data())));
+    } on Object catch (error) {
+      debugPrint('Could not load Firestore data. Using local data: $error');
+    }
+  }
 
   Future<AppUser> signIn(String email, String password) async {
     final normalized = email.trim().toLowerCase();
@@ -45,6 +83,7 @@ class DemoRepository {
       role: _users.isEmpty ? UserRole.admin : UserRole.user,
     );
     _users.add(user);
+    _saveUser(user);
     _notify('Account created', '${user.name} joined the workspace.');
     return user;
   }
@@ -72,6 +111,7 @@ class DemoRepository {
       color: _colorForIndex(_projects.length),
     );
     _projects.add(project);
+    _saveProject(project);
     _log(project.id, owner.id, 'created project "${project.name}"');
     _notify('Project created', project.name);
     return project;
@@ -164,6 +204,7 @@ class DemoRepository {
   void markNotificationsRead() {
     for (var index = 0; index < _notifications.length; index++) {
       _notifications[index] = _notifications[index].copyWith(read: true);
+      _saveNotification(_notifications[index]);
     }
   }
 
@@ -189,6 +230,7 @@ class DemoRepository {
       role: UserRole.user,
     );
     _users.add(user);
+    _saveUser(user);
     return user;
   }
 
@@ -196,6 +238,7 @@ class DemoRepository {
     final index = _projects.indexWhere((item) => item.id == project.id);
     if (index != -1) {
       _projects[index] = project;
+      _saveProject(project);
     }
   }
 
@@ -209,6 +252,7 @@ class DemoRepository {
         createdAt: DateTime.now(),
       ),
     );
+    _saveActivity(_activity.last);
   }
 
   void _notify(String title, String body) {
@@ -221,6 +265,258 @@ class DemoRepository {
         createdAt: DateTime.now(),
       ),
     );
+    _saveNotification(_notifications.first);
+  }
+
+  void _saveUser(AppUser user) {
+    if (!firebaseReady) return;
+    unawaited(_runFirestoreWrite(() {
+      return _firestore.collection('users').doc(user.id).set(_userToMap(user));
+    }));
+  }
+
+  void _saveProject(Project project) {
+    if (!firebaseReady) return;
+    unawaited(_runFirestoreWrite(() {
+      return _firestore.collection('projects').doc(project.id).set(_projectToMap(project));
+    }));
+  }
+
+  void _saveActivity(ActivityItem item) {
+    if (!firebaseReady) return;
+    unawaited(_runFirestoreWrite(() {
+      return _firestore
+          .collection('projects')
+          .doc(item.projectId)
+          .collection('activity')
+          .doc(item.id)
+          .set(_activityToMap(item));
+    }));
+  }
+
+  void _saveNotification(AppNotification notification) {
+    if (!firebaseReady) return;
+    unawaited(_runFirestoreWrite(() {
+      return _firestore
+          .collection('notifications')
+          .doc(notification.id)
+          .set(_notificationToMap(notification));
+    }));
+  }
+
+  Future<void> _saveSeedData() async {
+    final batch = _firestore.batch();
+    for (final user in _users) {
+      batch.set(_firestore.collection('users').doc(user.id), _userToMap(user));
+    }
+    for (final project in _projects) {
+      batch.set(_firestore.collection('projects').doc(project.id), _projectToMap(project));
+    }
+    for (final item in _activity) {
+      batch.set(
+        _firestore
+            .collection('projects')
+            .doc(item.projectId)
+            .collection('activity')
+            .doc(item.id),
+        _activityToMap(item),
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<void> _runFirestoreWrite(Future<void> Function() write) async {
+    try {
+      await write();
+    } on Object catch (error) {
+      debugPrint('Firestore write failed: $error');
+    }
+  }
+
+  Map<String, Object?> _userToMap(AppUser user) {
+    return {
+      'name': user.name,
+      'email': user.email,
+      'role': user.role.name,
+    };
+  }
+
+  AppUser _userFromMap(String id, Map<String, Object?> data) {
+    return AppUser(
+      id: id,
+      name: data['name'] as String? ?? '',
+      email: data['email'] as String? ?? '',
+      role: UserRole.values.byName(data['role'] as String? ?? UserRole.user.name),
+    );
+  }
+
+  Map<String, Object?> _projectToMap(Project project) {
+    return {
+      'name': project.name,
+      'description': project.description,
+      'ownerId': project.ownerId,
+      'managerId': project.managerId,
+      'members': project.members.map(_memberToMap).toList(),
+      'tasks': project.tasks.map(_taskToMap).toList(),
+      'createdAt': Timestamp.fromDate(project.createdAt),
+      'color': project.color,
+    };
+  }
+
+  Project _projectFromMap(String id, Map<String, Object?> data) {
+    final members = data['members'] as List<dynamic>? ?? const [];
+    final tasks = data['tasks'] as List<dynamic>? ?? const [];
+    return Project(
+      id: id,
+      name: data['name'] as String? ?? '',
+      description: data['description'] as String? ?? '',
+      ownerId: data['ownerId'] as String? ?? '',
+      managerId: data['managerId'] as String? ?? '',
+      members: members
+          .whereType<Map<String, dynamic>>()
+          .map(_memberFromMap)
+          .toList(growable: false),
+      tasks: tasks.whereType<Map<String, dynamic>>().map(_taskFromMap).toList(growable: false),
+      createdAt: _dateFromValue(data['createdAt']),
+      color: data['color'] as int? ?? 0xFF45D6B5,
+    );
+  }
+
+  Map<String, Object?> _memberToMap(ProjectMember member) {
+    return {
+      'userId': member.userId,
+      'email': member.email,
+      'permission': member.permission.name,
+    };
+  }
+
+  ProjectMember _memberFromMap(Map<String, Object?> data) {
+    return ProjectMember(
+      userId: data['userId'] as String? ?? '',
+      email: data['email'] as String? ?? '',
+      permission: ProjectPermission.values.byName(
+        data['permission'] as String? ?? ProjectPermission.member.name,
+      ),
+    );
+  }
+
+  Map<String, Object?> _taskToMap(ProjectTask task) {
+    return {
+      'id': task.id,
+      'title': task.title,
+      'description': task.description,
+      'status': task.status.name,
+      'assigneeId': task.assigneeId,
+      'createdBy': task.createdBy,
+      'createdAt': Timestamp.fromDate(task.createdAt),
+      'dueDate': task.dueDate == null ? null : Timestamp.fromDate(task.dueDate!),
+      'comments': task.comments.map(_commentToMap).toList(),
+      'attachments': task.attachments.map(_attachmentToMap).toList(),
+    };
+  }
+
+  ProjectTask _taskFromMap(Map<String, Object?> data) {
+    final comments = data['comments'] as List<dynamic>? ?? const [];
+    final attachments = data['attachments'] as List<dynamic>? ?? const [];
+    return ProjectTask(
+      id: data['id'] as String? ?? _uuid.v4(),
+      title: data['title'] as String? ?? '',
+      description: data['description'] as String? ?? '',
+      status: TaskStatus.values.byName(data['status'] as String? ?? TaskStatus.todo.name),
+      assigneeId: data['assigneeId'] as String? ?? '',
+      createdBy: data['createdBy'] as String? ?? '',
+      createdAt: _dateFromValue(data['createdAt']),
+      dueDate: data['dueDate'] == null ? null : _dateFromValue(data['dueDate']),
+      comments: comments
+          .whereType<Map<String, dynamic>>()
+          .map(_commentFromMap)
+          .toList(growable: false),
+      attachments: attachments
+          .whereType<Map<String, dynamic>>()
+          .map(_attachmentFromMap)
+          .toList(growable: false),
+    );
+  }
+
+  Map<String, Object?> _commentToMap(TaskComment comment) {
+    return {
+      'id': comment.id,
+      'authorId': comment.authorId,
+      'message': comment.message,
+      'createdAt': Timestamp.fromDate(comment.createdAt),
+    };
+  }
+
+  TaskComment _commentFromMap(Map<String, Object?> data) {
+    return TaskComment(
+      id: data['id'] as String? ?? _uuid.v4(),
+      authorId: data['authorId'] as String? ?? '',
+      message: data['message'] as String? ?? '',
+      createdAt: _dateFromValue(data['createdAt']),
+    );
+  }
+
+  Map<String, Object?> _attachmentToMap(TaskAttachment attachment) {
+    return {
+      'id': attachment.id,
+      'name': attachment.name,
+      'path': attachment.path,
+      'addedAt': Timestamp.fromDate(attachment.addedAt),
+    };
+  }
+
+  TaskAttachment _attachmentFromMap(Map<String, Object?> data) {
+    return TaskAttachment(
+      id: data['id'] as String? ?? _uuid.v4(),
+      name: data['name'] as String? ?? '',
+      path: data['path'] as String? ?? '',
+      addedAt: _dateFromValue(data['addedAt']),
+    );
+  }
+
+  Map<String, Object?> _activityToMap(ActivityItem item) {
+    return {
+      'projectId': item.projectId,
+      'actorId': item.actorId,
+      'message': item.message,
+      'createdAt': Timestamp.fromDate(item.createdAt),
+    };
+  }
+
+  ActivityItem _activityFromMap(String id, Map<String, Object?> data) {
+    return ActivityItem(
+      id: id,
+      projectId: data['projectId'] as String? ?? '',
+      actorId: data['actorId'] as String? ?? '',
+      message: data['message'] as String? ?? '',
+      createdAt: _dateFromValue(data['createdAt']),
+    );
+  }
+
+  Map<String, Object?> _notificationToMap(AppNotification notification) {
+    return {
+      'title': notification.title,
+      'body': notification.body,
+      'createdAt': Timestamp.fromDate(notification.createdAt),
+      'read': notification.read,
+    };
+  }
+
+  AppNotification _notificationFromMap(String id, Map<String, Object?> data) {
+    return AppNotification(
+      id: id,
+      title: data['title'] as String? ?? '',
+      body: data['body'] as String? ?? '',
+      createdAt: _dateFromValue(data['createdAt']),
+      read: data['read'] as bool? ?? false,
+    );
+  }
+
+  DateTime _dateFromValue(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
   }
 
   int _colorForIndex(int index) {
