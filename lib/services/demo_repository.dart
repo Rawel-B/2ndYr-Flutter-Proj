@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -12,12 +13,16 @@ import '../models/project.dart';
 import '../models/task.dart';
 
 class DemoRepository {
+  static const adminEmail = 'admin@fluttertrello.dev';
+  static const adminName = 'Admin';
+
   DemoRepository({required this.firebaseReady}) {
     _seed();
   }
 
   final bool firebaseReady;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  firebase_auth.FirebaseAuth get _auth => firebase_auth.FirebaseAuth.instance;
   final _uuid = const Uuid();
   final List<AppUser> _users = [];
   final List<Project> _projects = [];
@@ -26,6 +31,16 @@ class DemoRepository {
 
   List<AppUser> get users => List.unmodifiable(_users);
   List<Project> get projects => List.unmodifiable(_projects);
+  List<Project> projectsFor(AppUser? user) {
+    if (user == null) return const [];
+    if (user.isAdmin) return projects;
+    return _projects
+        .where(
+          (project) => project.members.any((member) => member.userId == user.id),
+        )
+        .toList(growable: false);
+  }
+
   List<ActivityItem> activityFor(String projectId) =>
       _activity.where((item) => item.projectId == projectId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -41,7 +56,10 @@ class DemoRepository {
       final activitySnapshot = await _firestore.collectionGroup('activity').get();
 
       if (usersSnapshot.docs.isEmpty && projectsSnapshot.docs.isEmpty) {
-        await _saveSeedData();
+        _users.clear();
+        _projects.clear();
+        _activity.clear();
+        _notifications.clear();
         return;
       }
 
@@ -66,6 +84,24 @@ class DemoRepository {
 
   Future<AppUser> signIn(String email, String password) async {
     final normalized = email.trim().toLowerCase();
+    if (firebaseReady) {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: normalized,
+        password: password,
+      );
+      final authUser = credential.user;
+      if (authUser == null) {
+        throw StateError('Firebase sign in did not return a user.');
+      }
+      final user = await _ensureUserProfile(
+        id: authUser.uid,
+        email: normalized,
+        name: authUser.displayName,
+      );
+      _notify('Welcome back', '${user.name} signed in successfully.');
+      return user;
+    }
+
     final user = _users.firstWhere(
       (user) => user.email == normalized,
       orElse: () => _createUser(normalized),
@@ -76,16 +112,59 @@ class DemoRepository {
 
   Future<AppUser> signUp(String name, String email, String password) async {
     final normalized = email.trim().toLowerCase();
+    if (firebaseReady) {
+      final displayName = _displayNameFor(normalized, name);
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: normalized,
+        password: password,
+      );
+      final authUser = credential.user;
+      if (authUser == null) {
+        throw StateError('Firebase sign up did not return a user.');
+      }
+      await authUser.updateDisplayName(displayName);
+      final user = AppUser(
+        id: authUser.uid,
+        name: displayName,
+        email: normalized,
+        role: _roleForEmail(normalized),
+      );
+      _upsertUser(user);
+      _saveUser(user);
+      _notify('Account created', '${user.name} joined the workspace.');
+      return user;
+    }
+
     final user = AppUser(
       id: _uuid.v4(),
-      name: name.trim().isEmpty ? normalized.split('@').first : name.trim(),
+      name: _displayNameFor(normalized, name),
       email: normalized,
-      role: _users.isEmpty ? UserRole.admin : UserRole.user,
+      role: _roleForEmail(normalized),
     );
     _users.add(user);
     _saveUser(user);
     _notify('Account created', '${user.name} joined the workspace.');
     return user;
+  }
+
+  Future<AppUser?> restoreSession() async {
+    if (!firebaseReady) {
+      return _users.isEmpty ? null : _users.first;
+    }
+
+    final authUser = _auth.currentUser;
+    if (authUser == null || authUser.email == null) return null;
+    return _ensureUserProfile(
+      id: authUser.uid,
+      email: authUser.email!,
+      name: authUser.displayName,
+    );
+  }
+
+  Future<void> signOut() async {
+    if (firebaseReady) {
+      await _auth.signOut();
+    }
   }
 
   Project createProject({
@@ -118,6 +197,7 @@ class DemoRepository {
   }
 
   void inviteMember(Project project, String email, AppUser actor) {
+    _requireProjectManager(project, actor);
     final user = _users.firstWhere(
       (user) => user.email == email.trim().toLowerCase(),
       orElse: () => _createUser(email.trim().toLowerCase()),
@@ -138,6 +218,7 @@ class DemoRepository {
   }
 
   void setManager(Project project, String userId, AppUser actor) {
+    _requireProjectOwner(project, actor);
     _replaceProject(project.copyWith(managerId: userId));
     final manager = _users.firstWhere((user) => user.id == userId);
     _log(project.id, actor.id, 'made ${manager.name} project manager');
@@ -151,6 +232,7 @@ class DemoRepository {
     required TaskStatus status,
     required String assigneeId,
   }) {
+    _requireProjectMember(project, actor);
     final task = ProjectTask(
       id: _uuid.v4(),
       title: title.trim(),
@@ -175,11 +257,13 @@ class DemoRepository {
   }
 
   void moveTask(Project project, ProjectTask task, TaskStatus status, AppUser actor) {
+    _requireProjectMember(project, actor);
     updateTask(project, task.copyWith(status: status));
     _log(project.id, actor.id, 'moved "${task.title}" to ${status.label}');
   }
 
   void addComment(Project project, ProjectTask task, AppUser actor, String message) {
+    _requireProjectMember(project, actor);
     final comment = TaskComment(
       id: _uuid.v4(),
       authorId: actor.id,
@@ -191,6 +275,7 @@ class DemoRepository {
   }
 
   void addAttachment(Project project, ProjectTask task, AppUser actor, String name, String path) {
+    _requireProjectMember(project, actor);
     final attachment = TaskAttachment(
       id: _uuid.v4(),
       name: name,
@@ -225,13 +310,90 @@ class DemoRepository {
   AppUser _createUser(String email) {
     final user = AppUser(
       id: _uuid.v4(),
-      name: email.split('@').first.replaceAll('.', ' '),
+      name: _displayNameFor(email, ''),
       email: email,
-      role: UserRole.user,
+      role: _roleForEmail(email),
     );
     _users.add(user);
     _saveUser(user);
     return user;
+  }
+
+  Future<AppUser> _ensureUserProfile({
+    required String id,
+    required String email,
+    String? name,
+  }) async {
+    final normalized = email.trim().toLowerCase();
+    final existing = userById(id) ?? _userByEmail(normalized);
+    if (existing != null) {
+      if (existing.id == id) return existing;
+      final updated = AppUser(
+        id: id,
+        name: existing.name,
+        email: existing.email,
+        role: existing.role,
+      );
+      _upsertUser(updated);
+      _saveUser(updated);
+      return updated;
+    }
+
+    final user = AppUser(
+      id: id,
+      name: _displayNameFor(normalized, name ?? ''),
+      email: normalized,
+      role: _roleForEmail(normalized),
+    );
+    _upsertUser(user);
+    _saveUser(user);
+    return user;
+  }
+
+  AppUser? _userByEmail(String email) {
+    for (final user in _users) {
+      if (user.email == email) return user;
+    }
+    return null;
+  }
+
+  void _upsertUser(AppUser user) {
+    final index = _users.indexWhere((item) => item.id == user.id);
+    if (index == -1) {
+      _users.add(user);
+    } else {
+      _users[index] = user;
+    }
+  }
+
+  String _displayNameFor(String email, String name) {
+    if (email == adminEmail) return adminName;
+    final trimmed = name.trim();
+    if (trimmed.isNotEmpty) return trimmed;
+    return email.split('@').first.replaceAll('.', ' ');
+  }
+
+  UserRole _roleForEmail(String email) {
+    return email == adminEmail ? UserRole.admin : UserRole.user;
+  }
+
+  void _requireProjectOwner(Project project, AppUser actor) {
+    if (actor.isAdmin || project.ownerId == actor.id) return;
+    throw StateError('Only admins and project owners can change project leadership.');
+  }
+
+  void _requireProjectManager(Project project, AppUser actor) {
+    if (actor.isAdmin || project.ownerId == actor.id || project.managerId == actor.id) {
+      return;
+    }
+    throw StateError('Only admins, owners, and managers can invite project members.');
+  }
+
+  void _requireProjectMember(Project project, AppUser actor) {
+    if (actor.isAdmin || project.members.any((member) => member.userId == actor.id)) {
+      return;
+    }
+    throw StateError('You are not a member of this project.');
   }
 
   void _replaceProject(Project project) {
@@ -304,27 +466,6 @@ class DemoRepository {
     }));
   }
 
-  Future<void> _saveSeedData() async {
-    final batch = _firestore.batch();
-    for (final user in _users) {
-      batch.set(_firestore.collection('users').doc(user.id), _userToMap(user));
-    }
-    for (final project in _projects) {
-      batch.set(_firestore.collection('projects').doc(project.id), _projectToMap(project));
-    }
-    for (final item in _activity) {
-      batch.set(
-        _firestore
-            .collection('projects')
-            .doc(item.projectId)
-            .collection('activity')
-            .doc(item.id),
-        _activityToMap(item),
-      );
-    }
-    await batch.commit();
-  }
-
   Future<void> _runFirestoreWrite(Future<void> Function() write) async {
     try {
       await write();
@@ -342,11 +483,14 @@ class DemoRepository {
   }
 
   AppUser _userFromMap(String id, Map<String, Object?> data) {
+    final email = (data['email'] as String? ?? '').trim().toLowerCase();
     return AppUser(
       id: id,
-      name: data['name'] as String? ?? '',
-      email: data['email'] as String? ?? '',
-      role: UserRole.values.byName(data['role'] as String? ?? UserRole.user.name),
+      name: _displayNameFor(email, data['name'] as String? ?? ''),
+      email: email,
+      role: _roleForEmail(email) == UserRole.admin
+          ? UserRole.admin
+          : UserRole.values.byName(data['role'] as String? ?? UserRole.user.name),
     );
   }
 
@@ -527,8 +671,8 @@ class DemoRepository {
   void _seed() {
     final admin = AppUser(
       id: _uuid.v4(),
-      name: 'Rayan Admin',
-      email: 'admin@fluttertrello.dev',
+      name: adminName,
+      email: adminEmail,
       role: UserRole.admin,
     );
     final dev = AppUser(

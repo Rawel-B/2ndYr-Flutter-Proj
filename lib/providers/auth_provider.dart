@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
@@ -17,7 +19,7 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
 
   Future<void> restoreSession() async {
-    _user = _repository.users.first;
+    _user = await _repository.restoreSession();
     notifyListeners();
   }
 
@@ -35,6 +37,7 @@ class AuthProvider extends ChangeNotifier {
 
   void signOut() {
     _user = null;
+    unawaited(_repository.signOut());
     notifyListeners();
   }
 

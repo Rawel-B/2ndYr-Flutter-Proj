@@ -11,9 +11,9 @@ class LoginView extends StatefulWidget {
 }
 
 class _LoginViewState extends State<LoginView> {
-  final _nameController = TextEditingController(text: 'Rayan Admin');
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController(text: 'admin@fluttertrello.dev');
-  final _passwordController = TextEditingController(text: 'password');
+  final _passwordController = TextEditingController();
   bool _signup = false;
 
   @override

@@ -15,7 +15,7 @@ class ProjectProvider extends ChangeNotifier {
   String? _selectedProjectId;
   bool _listView = false;
 
-  List<Project> get projects => _repository.projects;
+  List<Project> get projects => _repository.projectsFor(_user);
   List<AppUser> get users => _repository.users;
   List<AppNotification> get notifications => _repository.notifications;
   bool get isFirebaseReady => _repository.firebaseReady;
