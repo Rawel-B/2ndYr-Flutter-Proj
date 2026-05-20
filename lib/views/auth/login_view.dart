@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
 
@@ -11,10 +12,20 @@ class LoginView extends StatefulWidget {
 }
 
 class _LoginViewState extends State<LoginView> {
+  static const _rememberedEmailKey = 'remembered_login_email';
+
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController(text: 'admin@fluttertrello.dev');
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _signup = false;
+  bool _rememberMe = false;
+  String? _rememberedEmail;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedEmail();
+  }
 
   @override
   void dispose() {
@@ -82,6 +93,21 @@ class _LoginViewState extends State<LoginView> {
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                   ),
+                  if (!_signup) ...[
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: _rememberMe,
+                      onChanged: (value) => setState(() {
+                        _rememberMe = value ?? false;
+                        if (_rememberMe && _rememberedEmail != null) {
+                          _emailController.text = _rememberedEmail!;
+                        }
+                      }),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Remember me'),
+                    ),
+                  ],
                   if (auth.error != null) ...[
                     const SizedBox(height: 12),
                     Text(auth.error!, style: const TextStyle(color: Colors.redAccent)),
@@ -106,7 +132,7 @@ class _LoginViewState extends State<LoginView> {
                   ),
                   const SizedBox(height: 14),
                   TextButton(
-                    onPressed: () => setState(() => _signup = !_signup),
+                    onPressed: _toggleMode,
                     child: Text(
                       _signup
                           ? 'Already have an account? Sign in'
@@ -134,10 +160,62 @@ class _LoginViewState extends State<LoginView> {
         setState(() {
           _signup = false;
           _passwordController.clear();
+          _restoreLoginEmailField();
         });
       }
     } else {
+      final email = _emailController.text.trim().toLowerCase();
+      final rememberEmail = _rememberMe;
       await auth.signIn(_emailController.text, _passwordController.text);
+      if (auth.isAuthenticated && auth.error == null) {
+        await _saveRememberedEmail(email, rememberEmail);
+      }
+    }
+  }
+
+  Future<void> _loadRememberedEmail() async {
+    final preferences = await SharedPreferences.getInstance();
+    final email = preferences.getString(_rememberedEmailKey);
+    if (!mounted || email == null || email.isEmpty) return;
+    setState(() {
+      _rememberedEmail = email;
+      _rememberMe = true;
+      if (!_signup) {
+        _emailController.text = email;
+      }
+    });
+  }
+
+  Future<void> _saveRememberedEmail(String email, bool rememberEmail) async {
+    final preferences = await SharedPreferences.getInstance();
+    if (rememberEmail && email.isNotEmpty) {
+      await preferences.setString(_rememberedEmailKey, email);
+      _rememberedEmail = email;
+      return;
+    }
+
+    await preferences.remove(_rememberedEmailKey);
+    _rememberedEmail = null;
+  }
+
+  void _toggleMode() {
+    setState(() {
+      _signup = !_signup;
+      _passwordController.clear();
+      if (_signup) {
+        _nameController.clear();
+        _emailController.clear();
+      } else {
+        _restoreLoginEmailField();
+      }
+    });
+  }
+
+  void _restoreLoginEmailField() {
+    if (_rememberMe && _rememberedEmail != null) {
+      _emailController.text = _rememberedEmail!;
+    } else {
+      _emailController.clear();
     }
   }
 }
