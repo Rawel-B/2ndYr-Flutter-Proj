@@ -86,6 +86,10 @@ class _LoginViewState extends State<LoginView> {
                     const SizedBox(height: 12),
                     Text(auth.error!, style: const TextStyle(color: Colors.redAccent)),
                   ],
+                  if (auth.success != null) ...[
+                    const SizedBox(height: 12),
+                    Text(auth.success!, style: const TextStyle(color: Color(0xFF45D6B5))),
+                  ],
                   const SizedBox(height: 22),
                   SizedBox(
                     width: double.infinity,
@@ -121,11 +125,17 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _submit() async {
     final auth = context.read<AuthProvider>();
     if (_signup) {
-      await auth.signUp(
+      final created = await auth.signUp(
         _nameController.text,
         _emailController.text,
         _passwordController.text,
       );
+      if (created && mounted) {
+        setState(() {
+          _signup = false;
+          _passwordController.clear();
+        });
+      }
     } else {
       await auth.signIn(_emailController.text, _passwordController.text);
     }
@@ -153,10 +163,10 @@ class _Logo extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'SUP4 DEV',
+              'FlutterTrello',
               style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
             ),
-            Text('FlutterTrello', style: TextStyle(color: Colors.white60)),
+            Text('Project collaboration', style: TextStyle(color: Colors.white60)),
           ],
         ),
       ],

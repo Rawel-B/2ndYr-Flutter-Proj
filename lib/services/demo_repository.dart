@@ -85,66 +85,94 @@ class DemoRepository {
   Future<AppUser> signIn(String email, String password) async {
     final normalized = email.trim().toLowerCase();
     if (firebaseReady) {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: normalized,
-        password: password,
-      );
-      final authUser = credential.user;
-      if (authUser == null) {
-        throw StateError('Firebase sign in did not return a user.');
+      try {
+        final credential = await _auth.signInWithEmailAndPassword(
+          email: normalized,
+          password: password,
+        );
+        final authUser = credential.user;
+        if (authUser == null) {
+          throw StateError('Firebase sign in did not return a user.');
+        }
+        final user = await _ensureUserProfile(
+          id: authUser.uid,
+          email: normalized,
+          name: authUser.displayName,
+        );
+        _notify('Welcome back', '${user.name} signed in successfully.');
+        return user;
+      } on firebase_auth.FirebaseAuthException catch (error) {
+        if (!_isFirebaseAuthSetupError(error)) rethrow;
+        debugPrint('Firebase Auth setup issue. Falling back to local sign in: ${error.code}');
       }
-      final user = await _ensureUserProfile(
-        id: authUser.uid,
-        email: normalized,
-        name: authUser.displayName,
-      );
-      _notify('Welcome back', '${user.name} signed in successfully.');
-      return user;
     }
 
-    final user = _users.firstWhere(
-      (user) => user.email == normalized,
-      orElse: () => _createUser(normalized),
-    );
-    _notify('Welcome back', '${user.name} signed in successfully.');
-    return user;
+    return _signInLocal(normalized);
   }
 
   Future<AppUser> signUp(String name, String email, String password) async {
     final normalized = email.trim().toLowerCase();
     if (firebaseReady) {
       final displayName = _displayNameFor(normalized, name);
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: normalized,
-        password: password,
-      );
-      final authUser = credential.user;
-      if (authUser == null) {
-        throw StateError('Firebase sign up did not return a user.');
+      try {
+        final credential = await _auth.createUserWithEmailAndPassword(
+          email: normalized,
+          password: password,
+        );
+        final authUser = credential.user;
+        if (authUser == null) {
+          throw StateError('Firebase sign up did not return a user.');
+        }
+        await authUser.updateDisplayName(displayName);
+        final user = AppUser(
+          id: authUser.uid,
+          name: displayName,
+          email: normalized,
+          role: _roleForEmail(normalized),
+        );
+        _upsertUser(user);
+        _saveUser(user);
+        _notify('Account created', '${user.name} joined the workspace.');
+        return user;
+      } on firebase_auth.FirebaseAuthException catch (error) {
+        if (!_isFirebaseAuthSetupError(error)) rethrow;
+        debugPrint('Firebase Auth setup issue. Falling back to local sign up: ${error.code}');
       }
-      await authUser.updateDisplayName(displayName);
-      final user = AppUser(
-        id: authUser.uid,
-        name: displayName,
-        email: normalized,
-        role: _roleForEmail(normalized),
-      );
-      _upsertUser(user);
-      _saveUser(user);
-      _notify('Account created', '${user.name} joined the workspace.');
-      return user;
     }
 
+    return _signUpLocal(name, normalized);
+  }
+
+  AppUser _signInLocal(String normalizedEmail) {
+    final user = _users.firstWhere(
+      (user) => user.email == normalizedEmail,
+      orElse: () => _createUser(normalizedEmail),
+    );
+    _notify('Welcome back', '${user.name} signed in successfully.');
+    return user;
+  }
+
+  AppUser _signUpLocal(String name, String normalizedEmail) {
     final user = AppUser(
       id: _uuid.v4(),
-      name: _displayNameFor(normalized, name),
-      email: normalized,
-      role: _roleForEmail(normalized),
+      name: _displayNameFor(normalizedEmail, name),
+      email: normalizedEmail,
+      role: _roleForEmail(normalizedEmail),
     );
     _users.add(user);
     _saveUser(user);
     _notify('Account created', '${user.name} joined the workspace.');
     return user;
+  }
+
+  bool _isFirebaseAuthSetupError(firebase_auth.FirebaseAuthException error) {
+    return switch (error.code) {
+      'operation-not-allowed' ||
+      'admin-restricted-operation' ||
+      'configuration-not-found' =>
+        true,
+      _ => false,
+    };
   }
 
   Future<AppUser?> restoreSession() async {

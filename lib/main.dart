@@ -36,7 +36,7 @@ class FlutterTrelloApp extends StatelessWidget {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'SUP4 DEV - FlutterTrello',
+        title: 'FlutterTrello',
         themeMode: ThemeMode.dark,
         darkTheme: _darkTheme(),
         home: const AuthGate(),
