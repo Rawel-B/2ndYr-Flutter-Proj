@@ -109,8 +109,10 @@ class _LoginViewState extends State<LoginView> {
                     ),
                   ],
                   if (auth.error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(auth.error!, style: const TextStyle(color: Colors.redAccent)),
+                    if (auth.error != AuthProvider.accountExistsMessage) ...[
+                      const SizedBox(height: 12),
+                      Text(auth.error!, style: const TextStyle(color: Colors.redAccent)),
+                    ],
                   ],
                   if (auth.success != null) ...[
                     const SizedBox(height: 12),
@@ -156,6 +158,9 @@ class _LoginViewState extends State<LoginView> {
         _emailController.text,
         _passwordController.text,
       );
+      if (!created && mounted && auth.error == AuthProvider.accountExistsMessage) {
+        _showToast(AuthProvider.accountExistsMessage);
+      }
       if (created && mounted) {
         setState(() {
           _signup = false;
@@ -217,6 +222,17 @@ class _LoginViewState extends State<LoginView> {
     } else {
       _emailController.clear();
     }
+  }
+
+  void _showToast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 }
 

@@ -9,6 +9,8 @@ import '../services/demo_repository.dart';
 class AuthProvider extends ChangeNotifier {
   AuthProvider(this._repository);
 
+  static const accountExistsMessage = 'This account already exists.';
+
   final DemoRepository _repository;
   AppUser? _user;
   bool _loading = false;
@@ -99,7 +101,7 @@ class AuthProvider extends ChangeNotifier {
       'weak-password' => 'Use a stronger password with at least 6 characters.',
       'user-not-found' => 'No account exists for that email yet.',
       'wrong-password' || 'invalid-credential' => 'The email or password is incorrect.',
-      'email-already-in-use' => 'An account already exists for that email.',
+      'email-already-in-use' => accountExistsMessage,
       'operation-not-allowed' =>
         'Enable Email/Password sign-in in Firebase Authentication, then try again.',
       'admin-restricted-operation' =>

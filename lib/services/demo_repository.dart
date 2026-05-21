@@ -153,6 +153,13 @@ class DemoRepository {
   }
 
   AppUser _signUpLocal(String name, String normalizedEmail) {
+    if (_userByEmail(normalizedEmail) != null) {
+      throw firebase_auth.FirebaseAuthException(
+        code: 'email-already-in-use',
+        message: 'This account already exists.',
+      );
+    }
+
     final user = AppUser(
       id: _uuid.v4(),
       name: _displayNameFor(normalizedEmail, name),
