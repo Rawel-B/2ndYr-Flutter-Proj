@@ -11,6 +11,6 @@ void main() {
 
     expect(find.text('FlutterTrello'), findsWidgets);
     expect(find.text('Mobile Launch Board'), findsWidgets);
-    expect(find.text('Demo mode until Firebase is configured'), findsWidgets);
+    expect(find.text('Here is what your team is working on.'), findsWidgets);
   });
 }

@@ -152,11 +152,14 @@ class _ProjectList extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
-        Text('Hello, ${user.name}', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 6),
         Text(
-          provider.isFirebaseReady ? 'Firebase connected' : 'Demo mode until Firebase is configured',
-          style: const TextStyle(color: Colors.white60),
+          'Welcome, ${user.name}',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Here is what your team is working on.',
+          style: TextStyle(color: Colors.white60),
         ),
         const SizedBox(height: 22),
         for (final project in provider.projects)

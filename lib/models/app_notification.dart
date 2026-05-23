@@ -4,6 +4,7 @@ class AppNotification {
     required this.title,
     required this.body,
     required this.createdAt,
+    this.recipientUserId,
     this.read = false,
   });
 
@@ -11,6 +12,7 @@ class AppNotification {
   final String title;
   final String body;
   final DateTime createdAt;
+  final String? recipientUserId;
   final bool read;
 
   AppNotification copyWith({bool? read}) {
@@ -19,6 +21,7 @@ class AppNotification {
       title: title,
       body: body,
       createdAt: createdAt,
+      recipientUserId: recipientUserId,
       read: read ?? this.read,
     );
   }

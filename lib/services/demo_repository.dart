@@ -44,7 +44,13 @@ class DemoRepository {
   List<ActivityItem> activityFor(String projectId) =>
       _activity.where((item) => item.projectId == projectId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  List<AppNotification> get notifications => List.unmodifiable(_notifications);
+  List<AppNotification> notificationsFor(AppUser? user) {
+    if (user == null) return const [];
+    if (user.isAdmin) return List.unmodifiable(_notifications);
+    return _notifications
+        .where((notification) => notification.recipientUserId == user.id)
+        .toList(growable: false);
+  }
 
   Future<void> loadFirebaseData() async {
     if (!firebaseReady) return;
@@ -99,7 +105,7 @@ class DemoRepository {
           email: normalized,
           name: authUser.displayName,
         );
-        _notify('Welcome back', '${user.name} signed in successfully.');
+        _notify('Welcome back', '${user.name} signed in successfully.', recipientUserId: user.id);
         return user;
       } on firebase_auth.FirebaseAuthException catch (error) {
         if (!_isFirebaseAuthSetupError(error)) rethrow;
@@ -132,7 +138,7 @@ class DemoRepository {
         );
         _upsertUser(user);
         _saveUser(user);
-        _notify('Account created', '${user.name} joined the workspace.');
+        _notify('Account created', '${user.name} joined the workspace.', recipientUserId: user.id);
         return user;
       } on firebase_auth.FirebaseAuthException catch (error) {
         if (!_isFirebaseAuthSetupError(error)) rethrow;
@@ -148,7 +154,7 @@ class DemoRepository {
       (user) => user.email == normalizedEmail,
       orElse: () => _createUser(normalizedEmail),
     );
-    _notify('Welcome back', '${user.name} signed in successfully.');
+    _notify('Welcome back', '${user.name} signed in successfully.', recipientUserId: user.id);
     return user;
   }
 
@@ -168,7 +174,7 @@ class DemoRepository {
     );
     _users.add(user);
     _saveUser(user);
-    _notify('Account created', '${user.name} joined the workspace.');
+    _notify('Account created', '${user.name} joined the workspace.', recipientUserId: user.id);
     return user;
   }
 
@@ -227,7 +233,7 @@ class DemoRepository {
     _projects.add(project);
     _saveProject(project);
     _log(project.id, owner.id, 'created project "${project.name}"');
-    _notify('Project created', project.name);
+    _notify('Project created', project.name, recipientUserId: owner.id);
     return project;
   }
 
@@ -248,7 +254,11 @@ class DemoRepository {
       );
       _replaceProject(project.copyWith(members: members));
       _log(project.id, actor.id, 'invited ${user.email}');
-      _notify('Member invited', '${user.email} was added to ${project.name}.');
+      _notify(
+        'You were added to a project',
+        '${actor.name} added you to ${project.name}.',
+        recipientUserId: user.id,
+      );
     }
   }
 
@@ -321,8 +331,9 @@ class DemoRepository {
     _log(project.id, actor.id, 'attached $name to "${task.title}"');
   }
 
-  void markNotificationsRead() {
+  void markNotificationsRead(AppUser? user) {
     for (var index = 0; index < _notifications.length; index++) {
+      if (!_canSeeNotification(user, _notifications[index])) continue;
       _notifications[index] = _notifications[index].copyWith(read: true);
       _saveNotification(_notifications[index]);
     }
@@ -452,7 +463,13 @@ class DemoRepository {
     _saveActivity(_activity.last);
   }
 
-  void _notify(String title, String body) {
+  bool _canSeeNotification(AppUser? user, AppNotification notification) {
+    if (user == null) return false;
+    if (user.isAdmin) return true;
+    return notification.recipientUserId == user.id;
+  }
+
+  void _notify(String title, String body, {required String recipientUserId}) {
     _notifications.insert(
       0,
       AppNotification(
@@ -460,6 +477,7 @@ class DemoRepository {
         title: title,
         body: body,
         createdAt: DateTime.now(),
+        recipientUserId: recipientUserId,
       ),
     );
     _saveNotification(_notifications.first);
@@ -677,6 +695,7 @@ class DemoRepository {
       'title': notification.title,
       'body': notification.body,
       'createdAt': Timestamp.fromDate(notification.createdAt),
+      'recipientUserId': notification.recipientUserId,
       'read': notification.read,
     };
   }
@@ -687,6 +706,7 @@ class DemoRepository {
       title: data['title'] as String? ?? '',
       body: data['body'] as String? ?? '',
       createdAt: _dateFromValue(data['createdAt']),
+      recipientUserId: data['recipientUserId'] as String?,
       read: data['read'] as bool? ?? false,
     );
   }
@@ -742,8 +762,8 @@ class DemoRepository {
         ),
         ProjectTask(
           id: _uuid.v4(),
-          title: 'Connect Firebase services',
-          description: 'Prepare auth and Firestore boundaries for real-time collaboration.',
+          title: 'Prepare workspace sync',
+          description: 'Keep project updates and team activity in one place.',
           status: TaskStatus.inProgress,
           assigneeId: dev.id,
           createdBy: admin.id,

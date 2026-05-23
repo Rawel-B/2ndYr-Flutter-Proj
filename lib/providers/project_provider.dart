@@ -17,8 +17,7 @@ class ProjectProvider extends ChangeNotifier {
 
   List<Project> get projects => _repository.projectsFor(_user);
   List<AppUser> get users => _repository.users;
-  List<AppNotification> get notifications => _repository.notifications;
-  bool get isFirebaseReady => _repository.firebaseReady;
+  List<AppNotification> get notifications => _repository.notificationsFor(_user);
   bool get listView => _listView;
 
   Project? get selectedProject {
@@ -111,7 +110,7 @@ class ProjectProvider extends ChangeNotifier {
   AppUser? userById(String id) => _repository.userById(id);
 
   void markNotificationsRead() {
-    _repository.markNotificationsRead();
+    _repository.markNotificationsRead(_user);
     notifyListeners();
   }
 
