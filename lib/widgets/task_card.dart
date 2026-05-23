@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/project.dart';
@@ -31,6 +32,21 @@ class TaskCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(task.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              if (task.flags.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final flag in task.flags)
+                      Chip(
+                        visualDensity: VisualDensity.compact,
+                        avatar: Icon(_flagIcon(flag), size: 14),
+                        label: Text(flag.label),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 task.description,
@@ -57,6 +73,12 @@ class TaskCard extends StatelessWidget {
                       style: const TextStyle(color: Colors.white60),
                     ),
                   ),
+                  if (task.dueDate != null) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.event_outlined, size: 16, color: Colors.white.withAlpha(150)),
+                    const SizedBox(width: 3),
+                    Text(DateFormat.MMMd().format(task.dueDate!)),
+                  ],
                   Icon(Icons.mode_comment_outlined, size: 16, color: Colors.white.withAlpha(150)),
                   const SizedBox(width: 3),
                   Text('${task.comments.length}'),
@@ -71,5 +93,14 @@ class TaskCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  IconData _flagIcon(TaskFlag flag) {
+    return switch (flag) {
+      TaskFlag.urgent => Icons.priority_high,
+      TaskFlag.blocked => Icons.block,
+      TaskFlag.review => Icons.rate_review_outlined,
+      TaskFlag.client => Icons.handshake_outlined,
+    };
   }
 }

@@ -12,6 +12,19 @@ extension TaskStatusLabel on TaskStatus {
   }
 }
 
+enum TaskFlag { urgent, blocked, review, client }
+
+extension TaskFlagLabel on TaskFlag {
+  String get label {
+    return switch (this) {
+      TaskFlag.urgent => 'Urgent',
+      TaskFlag.blocked => 'Blocked',
+      TaskFlag.review => 'Review',
+      TaskFlag.client => 'Client',
+    };
+  }
+}
+
 class TaskAttachment {
   const TaskAttachment({
     required this.id,
@@ -37,6 +50,7 @@ class ProjectTask {
     required this.createdAt,
     required this.comments,
     required this.attachments,
+    this.flags = const [],
     this.dueDate,
   });
 
@@ -50,6 +64,7 @@ class ProjectTask {
   final DateTime? dueDate;
   final List<TaskComment> comments;
   final List<TaskAttachment> attachments;
+  final List<TaskFlag> flags;
 
   ProjectTask copyWith({
     String? title,
@@ -57,8 +72,10 @@ class ProjectTask {
     TaskStatus? status,
     String? assigneeId,
     DateTime? dueDate,
+    bool clearDueDate = false,
     List<TaskComment>? comments,
     List<TaskAttachment>? attachments,
+    List<TaskFlag>? flags,
   }) {
     return ProjectTask(
       id: id,
@@ -68,9 +85,10 @@ class ProjectTask {
       assigneeId: assigneeId ?? this.assigneeId,
       createdBy: createdBy,
       createdAt: createdAt,
-      dueDate: dueDate ?? this.dueDate,
+      dueDate: clearDueDate ? null : dueDate ?? this.dueDate,
       comments: comments ?? this.comments,
       attachments: attachments ?? this.attachments,
+      flags: flags ?? this.flags,
     );
   }
 }

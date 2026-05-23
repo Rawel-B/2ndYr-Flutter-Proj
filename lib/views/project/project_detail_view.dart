@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/project.dart';
@@ -34,9 +35,17 @@ class ProjectDetailView extends StatelessWidget {
             icon: const Icon(Icons.person_add_alt),
           ),
           IconButton(
-            tooltip: 'Activity',
-            onPressed: () => _showActivity(context, project),
-            icon: const Icon(Icons.history),
+            tooltip: provider.activityVisible ? 'Hide activity' : 'Show activity',
+            onPressed: () {
+              if (MediaQuery.sizeOf(context).width >= 1100) {
+                provider.toggleActivityPanel();
+              } else {
+                _showActivity(context, project);
+              }
+            },
+            icon: Icon(
+              provider.activityVisible ? Icons.history_toggle_off : Icons.history,
+            ),
           ),
           IconButton(
             tooltip: 'Add task',
@@ -48,7 +57,7 @@ class ProjectDetailView extends StatelessWidget {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final showSidePanel = constraints.maxWidth >= 1100;
+            final showSidePanel = constraints.maxWidth >= 1100 && provider.activityVisible;
             return Row(
               children: [
                 Expanded(
@@ -134,6 +143,13 @@ class ProjectDetailView extends StatelessWidget {
                 children: [
                   Chip(label: Text(freshTask.status.label)),
                   Chip(label: Text('Assigned to ${assignee?.name ?? 'Unassigned'}')),
+                  if (freshTask.dueDate != null)
+                    Chip(label: Text('Due ${DateFormat.MMMd().format(freshTask.dueDate!)}')),
+                  for (final flag in freshTask.flags)
+                    Chip(
+                      avatar: Icon(_flagIcon(flag), size: 16),
+                      label: Text(flag.label),
+                    ),
                   Chip(label: Text('${freshTask.attachments.length} attachments')),
                 ],
               ),
@@ -264,6 +280,8 @@ class ProjectDetailView extends StatelessWidget {
     final description = TextEditingController(text: task?.description);
     var assigneeId = project.members.first.userId;
     var taskStatus = task?.status ?? status ?? TaskStatus.todo;
+    var dueDate = task?.dueDate;
+    var selectedFlags = {...?task?.flags};
     if (task != null) {
       assigneeId = task.assigneeId;
     }
@@ -275,11 +293,12 @@ class ProjectDetailView extends StatelessWidget {
           final provider = context.read<ProjectProvider>();
           return Dialog(
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Padding(
-                padding: const EdgeInsets.all(22),
-                child: Column(
+            child: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -351,6 +370,62 @@ class ProjectDetailView extends StatelessWidget {
                       ],
                       onChanged: (value) => setState(() => assigneeId = value ?? assigneeId),
                     ),
+                    const SizedBox(height: 14),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: dueDate ?? DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2035),
+                        );
+                        if (picked != null) {
+                          setState(() => dueDate = picked);
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Due date',
+                          prefixIcon: Icon(Icons.event_outlined),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                dueDate == null
+                                    ? 'No due date'
+                                    : DateFormat.yMMMd().format(dueDate!),
+                              ),
+                            ),
+                            if (dueDate != null)
+                              IconButton(
+                                tooltip: 'Clear due date',
+                                onPressed: () => setState(() => dueDate = null),
+                                icon: const Icon(Icons.close),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text('Flags', style: Theme.of(context).textTheme.labelLarge),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final flag in TaskFlag.values)
+                          FilterChip(
+                            avatar: Icon(_flagIcon(flag), size: 16),
+                            label: Text(flag.label),
+                            selected: selectedFlags.contains(flag),
+                            onSelected: (selected) => setState(() {
+                              selected ? selectedFlags.add(flag) : selectedFlags.remove(flag);
+                            }),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 20),
                     Row(
                       children: [
@@ -369,6 +444,8 @@ class ProjectDetailView extends StatelessWidget {
                                 description: description.text,
                                 status: taskStatus,
                                 assigneeId: assigneeId,
+                                dueDate: dueDate,
+                                flags: selectedFlags.toList(growable: false),
                               );
                             } else {
                               provider.updateTask(
@@ -378,6 +455,9 @@ class ProjectDetailView extends StatelessWidget {
                                   description: description.text.trim(),
                                   status: taskStatus,
                                   assigneeId: assigneeId,
+                                  dueDate: dueDate,
+                                  clearDueDate: dueDate == null,
+                                  flags: selectedFlags.toList(growable: false),
                                 ),
                               );
                             }
@@ -389,6 +469,7 @@ class ProjectDetailView extends StatelessWidget {
                       ],
                     ),
                   ],
+                  ),
                 ),
               ),
             ),
@@ -396,6 +477,15 @@ class ProjectDetailView extends StatelessWidget {
         },
       ),
     );
+  }
+
+  static IconData _flagIcon(TaskFlag flag) {
+    return switch (flag) {
+      TaskFlag.urgent => Icons.priority_high,
+      TaskFlag.blocked => Icons.block,
+      TaskFlag.review => Icons.rate_review_outlined,
+      TaskFlag.client => Icons.handshake_outlined,
+    };
   }
 }
 

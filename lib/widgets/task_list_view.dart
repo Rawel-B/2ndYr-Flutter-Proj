@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/project.dart';
@@ -30,7 +31,7 @@ class TaskListPanel extends StatelessWidget {
           return ListTile(
             leading: const Icon(Icons.check_circle_outline),
             title: Text(task.title),
-            subtitle: Text('${task.status.label} • ${assignee?.name ?? 'Unassigned'}'),
+            subtitle: Text(_taskSummary(task, assignee?.name ?? 'Unassigned')),
             trailing: Wrap(
               spacing: 8,
               children: [
@@ -43,5 +44,15 @@ class TaskListPanel extends StatelessWidget {
         },
       ),
     );
+  }
+
+  String _taskSummary(ProjectTask task, String assignee) {
+    final parts = [
+      task.status.label,
+      assignee,
+      if (task.dueDate != null) 'Due ${DateFormat.MMMd().format(task.dueDate!)}',
+      if (task.flags.isNotEmpty) task.flags.map((flag) => flag.label).join(', '),
+    ];
+    return parts.join(' - ');
   }
 }

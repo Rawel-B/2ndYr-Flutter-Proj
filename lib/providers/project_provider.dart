@@ -14,11 +14,13 @@ class ProjectProvider extends ChangeNotifier {
   AppUser? _user;
   String? _selectedProjectId;
   bool _listView = false;
+  bool _activityVisible = true;
 
   List<Project> get projects => _repository.projectsFor(_user);
   List<AppUser> get users => _repository.users;
   List<AppNotification> get notifications => _repository.notificationsFor(_user);
   bool get listView => _listView;
+  bool get activityVisible => _activityVisible;
 
   Project? get selectedProject {
     if (_selectedProjectId == null) {
@@ -45,6 +47,11 @@ class ProjectProvider extends ChangeNotifier {
 
   void toggleView() {
     _listView = !_listView;
+    notifyListeners();
+  }
+
+  void toggleActivityPanel() {
+    _activityVisible = !_activityVisible;
     notifyListeners();
   }
 
@@ -75,6 +82,8 @@ class ProjectProvider extends ChangeNotifier {
     required String description,
     required TaskStatus status,
     required String assigneeId,
+    DateTime? dueDate,
+    List<TaskFlag> flags = const [],
   }) {
     _repository.createTask(
       project: project,
@@ -83,6 +92,8 @@ class ProjectProvider extends ChangeNotifier {
       description: description,
       status: status,
       assigneeId: assigneeId,
+      dueDate: dueDate,
+      flags: flags,
     );
     notifyListeners();
   }

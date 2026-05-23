@@ -276,6 +276,8 @@ class DemoRepository {
     required String description,
     required TaskStatus status,
     required String assigneeId,
+    DateTime? dueDate,
+    List<TaskFlag> flags = const [],
   }) {
     _requireProjectMember(project, actor);
     final task = ProjectTask(
@@ -288,19 +290,43 @@ class DemoRepository {
       createdAt: DateTime.now(),
       comments: const [],
       attachments: const [],
+      flags: flags,
+      dueDate: dueDate,
     );
     _replaceProject(project.copyWith(tasks: [...project.tasks, task]));
     _log(project.id, actor.id, 'created task "${task.title}"');
+    _notifyIfRelevant(
+      actor,
+      task.assigneeId,
+      'New task assigned',
+      '${actor.name} assigned "${task.title}" to you.',
+    );
     return task;
   }
 
   void updateTask(Project project, ProjectTask task, AppUser actor) {
     _requireProjectMember(project, actor);
+    final previous = project.tasks.firstWhere((item) => item.id == task.id);
     final tasks = project.tasks
         .map((item) => item.id == task.id ? task : item)
         .toList(growable: false);
     _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'updated "${task.title}"');
+    if (previous.assigneeId != task.assigneeId) {
+      _notifyIfRelevant(
+        actor,
+        task.assigneeId,
+        'Task assigned to you',
+        '${actor.name} assigned "${task.title}" to you.',
+      );
+    } else {
+      _notifyTaskFollowers(
+        actor,
+        task,
+        'Task updated',
+        '${actor.name} updated "${task.title}".',
+      );
+    }
   }
 
   void deleteTask(Project project, ProjectTask task, AppUser actor) {
@@ -308,6 +334,12 @@ class DemoRepository {
     final tasks = project.tasks.where((item) => item.id != task.id).toList(growable: false);
     _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'deleted "${task.title}"');
+    _notifyTaskFollowers(
+      actor,
+      task,
+      'Task deleted',
+      '${actor.name} deleted "${task.title}".',
+    );
   }
 
   void moveTask(Project project, ProjectTask task, TaskStatus status, AppUser actor) {
@@ -317,6 +349,12 @@ class DemoRepository {
         .toList(growable: false);
     _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'moved "${task.title}" to ${status.label}');
+    _notifyTaskFollowers(
+      actor,
+      task,
+      'Task moved',
+      '${actor.name} moved "${task.title}" to ${status.label}.',
+    );
   }
 
   void addComment(Project project, ProjectTask task, AppUser actor, String message) {
@@ -332,6 +370,12 @@ class DemoRepository {
         .toList(growable: false);
     _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'commented on "${task.title}"');
+    _notifyTaskFollowers(
+      actor,
+      task,
+      'New comment',
+      '${actor.name} commented on "${task.title}".',
+    );
   }
 
   void addAttachment(Project project, ProjectTask task, AppUser actor, String name, String path) {
@@ -349,6 +393,12 @@ class DemoRepository {
         .toList(growable: false);
     _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'attached $name to "${task.title}"');
+    _notifyTaskFollowers(
+      actor,
+      task,
+      'File attached',
+      '${actor.name} attached $name to "${task.title}".',
+    );
   }
 
   void markNotificationsRead(AppUser? user) {
@@ -503,6 +553,23 @@ class DemoRepository {
     _saveNotification(_notifications.first);
   }
 
+  void _notifyIfRelevant(AppUser actor, String recipientUserId, String title, String body) {
+    if (recipientUserId.isEmpty || recipientUserId == actor.id) return;
+    _notify(title, body, recipientUserId: recipientUserId);
+  }
+
+  void _notifyTaskFollowers(AppUser actor, ProjectTask task, String title, String body) {
+    final recipients = {
+      task.assigneeId,
+      task.createdBy,
+      for (final comment in task.comments) comment.authorId,
+    }..removeWhere((id) => id.isEmpty || id == actor.id);
+
+    for (final recipientId in recipients) {
+      _notify(title, body, recipientUserId: recipientId);
+    }
+  }
+
   void _saveUser(AppUser user) {
     if (!firebaseReady) return;
     unawaited(_runFirestoreWrite(() {
@@ -627,6 +694,7 @@ class DemoRepository {
       'createdBy': task.createdBy,
       'createdAt': Timestamp.fromDate(task.createdAt),
       'dueDate': task.dueDate == null ? null : Timestamp.fromDate(task.dueDate!),
+      'flags': task.flags.map((flag) => flag.name).toList(),
       'comments': task.comments.map(_commentToMap).toList(),
       'attachments': task.attachments.map(_attachmentToMap).toList(),
     };
@@ -635,6 +703,7 @@ class DemoRepository {
   ProjectTask _taskFromMap(Map<String, Object?> data) {
     final comments = data['comments'] as List<dynamic>? ?? const [];
     final attachments = data['attachments'] as List<dynamic>? ?? const [];
+    final flags = data['flags'] as List<dynamic>? ?? const [];
     return ProjectTask(
       id: data['id'] as String? ?? _uuid.v4(),
       title: data['title'] as String? ?? '',
@@ -644,6 +713,9 @@ class DemoRepository {
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: _dateFromValue(data['createdAt']),
       dueDate: data['dueDate'] == null ? null : _dateFromValue(data['dueDate']),
+      flags: flags.whereType<String>().map(_taskFlagFromName).whereType<TaskFlag>().toList(
+            growable: false,
+          ),
       comments: comments
           .whereType<Map<String, dynamic>>()
           .map(_commentFromMap)
@@ -689,6 +761,13 @@ class DemoRepository {
       path: data['path'] as String? ?? '',
       addedAt: _dateFromValue(data['addedAt']),
     );
+  }
+
+  TaskFlag? _taskFlagFromName(String name) {
+    for (final flag in TaskFlag.values) {
+      if (flag.name == name) return flag;
+    }
+    return null;
   }
 
   Map<String, Object?> _activityToMap(ActivityItem item) {
@@ -779,6 +858,7 @@ class DemoRepository {
           createdAt: DateTime.now().subtract(const Duration(days: 2)),
           comments: const [],
           attachments: const [],
+          flags: const [TaskFlag.review],
         ),
         ProjectTask(
           id: _uuid.v4(),
@@ -790,6 +870,7 @@ class DemoRepository {
           createdAt: DateTime.now().subtract(const Duration(days: 1)),
           comments: const [],
           attachments: const [],
+          flags: const [TaskFlag.urgent],
         ),
         ProjectTask(
           id: _uuid.v4(),
@@ -801,6 +882,7 @@ class DemoRepository {
           createdAt: DateTime.now().subtract(const Duration(hours: 8)),
           comments: const [],
           attachments: const [],
+          flags: const [TaskFlag.client],
         ),
       ],
       createdAt: DateTime.now().subtract(const Duration(days: 3)),

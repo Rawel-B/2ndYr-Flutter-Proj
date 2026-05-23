@@ -60,6 +60,17 @@ class KanbanColumn extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              if (hovering)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('Move to ${status.label}'),
+                ),
               Flexible(child: _TaskStack(tasks: tasks, project: project, onOpenTask: onOpenTask)),
             ],
           ),
@@ -93,8 +104,9 @@ class _TaskStack extends StatelessWidget {
       separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final task = tasks[index];
-        return LongPressDraggable<ProjectTask>(
+        return Draggable<ProjectTask>(
           data: task,
+          dragAnchorStrategy: pointerDragAnchorStrategy,
           feedback: SizedBox(
             width: 280,
             child: Material(
