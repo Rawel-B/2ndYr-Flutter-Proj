@@ -294,16 +294,28 @@ class DemoRepository {
     return task;
   }
 
-  void updateTask(Project project, ProjectTask task) {
+  void updateTask(Project project, ProjectTask task, AppUser actor) {
+    _requireProjectMember(project, actor);
     final tasks = project.tasks
         .map((item) => item.id == task.id ? task : item)
         .toList(growable: false);
     _replaceProject(project.copyWith(tasks: tasks));
+    _log(project.id, actor.id, 'updated "${task.title}"');
+  }
+
+  void deleteTask(Project project, ProjectTask task, AppUser actor) {
+    _requireProjectMember(project, actor);
+    final tasks = project.tasks.where((item) => item.id != task.id).toList(growable: false);
+    _replaceProject(project.copyWith(tasks: tasks));
+    _log(project.id, actor.id, 'deleted "${task.title}"');
   }
 
   void moveTask(Project project, ProjectTask task, TaskStatus status, AppUser actor) {
     _requireProjectMember(project, actor);
-    updateTask(project, task.copyWith(status: status));
+    final tasks = project.tasks
+        .map((item) => item.id == task.id ? task.copyWith(status: status) : item)
+        .toList(growable: false);
+    _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'moved "${task.title}" to ${status.label}');
   }
 
@@ -315,7 +327,10 @@ class DemoRepository {
       message: message.trim(),
       createdAt: DateTime.now(),
     );
-    updateTask(project, task.copyWith(comments: [...task.comments, comment]));
+    final tasks = project.tasks
+        .map((item) => item.id == task.id ? task.copyWith(comments: [...task.comments, comment]) : item)
+        .toList(growable: false);
+    _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'commented on "${task.title}"');
   }
 
@@ -327,7 +342,12 @@ class DemoRepository {
       path: path,
       addedAt: DateTime.now(),
     );
-    updateTask(project, task.copyWith(attachments: [...task.attachments, attachment]));
+    final tasks = project.tasks
+        .map((item) => item.id == task.id
+            ? task.copyWith(attachments: [...task.attachments, attachment])
+            : item)
+        .toList(growable: false);
+    _replaceProject(project.copyWith(tasks: tasks));
     _log(project.id, actor.id, 'attached $name to "${task.title}"');
   }
 

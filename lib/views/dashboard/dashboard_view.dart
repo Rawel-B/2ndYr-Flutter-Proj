@@ -7,7 +7,6 @@ import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/project_provider.dart';
 import '../admin/admin_view.dart';
-import '../mockup/mockup_view.dart';
 import '../project/project_detail_view.dart';
 
 class DashboardView extends StatelessWidget {
@@ -23,13 +22,6 @@ class DashboardView extends StatelessWidget {
       appBar: AppBar(
         title: const Text('FlutterTrello'),
         actions: [
-          IconButton(
-            tooltip: 'Visual mockup',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MockupView()),
-            ),
-            icon: const Icon(Icons.draw_outlined),
-          ),
           IconButton(
             tooltip: 'Notifications',
             onPressed: () => _showNotifications(context),

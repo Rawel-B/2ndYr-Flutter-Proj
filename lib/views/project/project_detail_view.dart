@@ -34,8 +34,13 @@ class ProjectDetailView extends StatelessWidget {
             icon: const Icon(Icons.person_add_alt),
           ),
           IconButton(
+            tooltip: 'Activity',
+            onPressed: () => _showActivity(context, project),
+            icon: const Icon(Icons.history),
+          ),
+          IconButton(
             tooltip: 'Add task',
-            onPressed: () => _taskDialog(context, project, TaskStatus.todo),
+            onPressed: () => _taskDialog(context, project),
             icon: const Icon(Icons.add_task),
           ),
         ],
@@ -66,7 +71,7 @@ class ProjectDetailView extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Add task',
-        onPressed: () => _taskDialog(context, project, TaskStatus.todo),
+        onPressed: () => _taskDialog(context, project),
         child: const Icon(Icons.add),
       ),
     );
@@ -82,8 +87,8 @@ class ProjectDetailView extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) {
-        final provider = context.watch<ProjectProvider>();
+      builder: (sheetContext) {
+        final provider = sheetContext.watch<ProjectProvider>();
         final freshProject = provider.projects.firstWhere((item) => item.id == project.id);
         final freshTask = freshProject.tasks.firstWhere((item) => item.id == task.id);
         final assignee = provider.userById(freshTask.assigneeId);
@@ -92,12 +97,34 @@ class ProjectDetailView extends StatelessWidget {
             20,
             0,
             20,
-            MediaQuery.viewInsetsOf(context).bottom + 20,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
           ),
           child: ListView(
             shrinkWrap: true,
             children: [
-              Text(freshTask.title, style: Theme.of(context).textTheme.titleLarge),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      freshTask.title,
+                      style: Theme.of(sheetContext).textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Edit task',
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      _taskDialog(context, freshProject, task: freshTask);
+                    },
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete task',
+                    onPressed: () => _deleteTask(sheetContext, freshProject, freshTask),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
               Text(freshTask.description, style: const TextStyle(color: Colors.white70)),
               const SizedBox(height: 16),
@@ -111,7 +138,7 @@ class ProjectDetailView extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 20),
-              Text('Comments', style: Theme.of(context).textTheme.titleMedium),
+              Text('Comments', style: Theme.of(sheetContext).textTheme.titleMedium),
               const SizedBox(height: 8),
               for (final item in freshTask.comments)
                 ListTile(
@@ -193,60 +220,178 @@ class ProjectDetailView extends StatelessWidget {
     );
   }
 
-  void _taskDialog(BuildContext context, Project project, TaskStatus status) {
-    final title = TextEditingController();
-    final description = TextEditingController();
+  static void _showActivity(BuildContext context, Project project) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.72,
+        child: ActivityPanel(project: project),
+      ),
+    );
+  }
+
+  static void _deleteTask(BuildContext context, Project project, ProjectTask task) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('This will remove "${task.title}" from the project.'),
+        actions: [
+          TextButton(onPressed: Navigator.of(dialogContext).pop, child: const Text('Cancel')),
+          FilledButton.tonalIcon(
+            onPressed: () {
+              context.read<ProjectProvider>().deleteTask(project, task);
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).pop();
+            },
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static void _taskDialog(
+    BuildContext context,
+    Project project, {
+    TaskStatus? status,
+    ProjectTask? task,
+  }) {
+    final title = TextEditingController(text: task?.title);
+    final description = TextEditingController(text: task?.description);
     var assigneeId = project.members.first.userId;
+    var taskStatus = task?.status ?? status ?? TaskStatus.todo;
+    if (task != null) {
+      assigneeId = task.assigneeId;
+    }
 
     showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           final provider = context.read<ProjectProvider>();
-          return AlertDialog(
-            title: const Text('New task'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: title, decoration: const InputDecoration(labelText: 'Title')),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: description,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: assigneeId,
-                  decoration: const InputDecoration(labelText: 'Assignee'),
-                  items: [
-                    for (final member in project.members)
-                      DropdownMenuItem(
-                        value: member.userId,
-                        child: Text(provider.userById(member.userId)?.name ?? member.email),
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          task == null ? Icons.add_task : Icons.edit_outlined,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            task == null ? 'New task' : 'Edit task',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: Navigator.of(context).pop,
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: title,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Title',
+                        prefixIcon: Icon(Icons.title),
                       ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: description,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        prefixIcon: Icon(Icons.notes_outlined),
+                      ),
+                      minLines: 3,
+                      maxLines: 5,
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<TaskStatus>(
+                      initialValue: taskStatus,
+                      decoration: const InputDecoration(
+                        labelText: 'Status',
+                        prefixIcon: Icon(Icons.flag_outlined),
+                      ),
+                      items: [
+                        for (final item in TaskStatus.values)
+                          DropdownMenuItem(value: item, child: Text(item.label)),
+                      ],
+                      onChanged: (value) => setState(() => taskStatus = value ?? taskStatus),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      initialValue: assigneeId,
+                      decoration: const InputDecoration(
+                        labelText: 'Assignee',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      items: [
+                        for (final member in project.members)
+                          DropdownMenuItem(
+                            value: member.userId,
+                            child: Text(provider.userById(member.userId)?.name ?? member.email),
+                          ),
+                      ],
+                      onChanged: (value) => setState(() => assigneeId = value ?? assigneeId),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: Navigator.of(context).pop,
+                          child: const Text('Cancel'),
+                        ),
+                        const Spacer(),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            if (title.text.trim().isEmpty) return;
+                            if (task == null) {
+                              provider.createTask(
+                                project: project,
+                                title: title.text,
+                                description: description.text,
+                                status: taskStatus,
+                                assigneeId: assigneeId,
+                              );
+                            } else {
+                              provider.updateTask(
+                                project,
+                                task.copyWith(
+                                  title: title.text.trim(),
+                                  description: description.text.trim(),
+                                  status: taskStatus,
+                                  assigneeId: assigneeId,
+                                ),
+                              );
+                            }
+                            Navigator.of(context).pop();
+                          },
+                          icon: Icon(task == null ? Icons.add : Icons.save_outlined),
+                          label: Text(task == null ? 'Create' : 'Save'),
+                        ),
+                      ],
+                    ),
                   ],
-                  onChanged: (value) => setState(() => assigneeId = value ?? assigneeId),
                 ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: Navigator.of(context).pop, child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () {
-                  if (title.text.trim().isEmpty) return;
-                  context.read<ProjectProvider>().createTask(
-                        project: project,
-                        title: title.text,
-                        description: description.text,
-                        status: status,
-                        assigneeId: assigneeId,
-                      );
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Create'),
               ),
-            ],
+            ),
           );
         },
       ),
@@ -269,10 +414,10 @@ class _Board extends StatelessWidget {
             KanbanColumn(
               project: project,
               status: status,
-              onAddTask: () => ProjectDetailView(projectId: project.id)._taskDialog(
+              onAddTask: () => ProjectDetailView._taskDialog(
                 context,
                 project,
-                status,
+                status: status,
               ),
               onOpenTask: (task) => ProjectDetailView.openTaskSheet(context, project, task),
             ),

@@ -92,6 +92,16 @@ class ProjectProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateTask(Project project, ProjectTask task) {
+    _repository.updateTask(project, task, _requireUser());
+    notifyListeners();
+  }
+
+  void deleteTask(Project project, ProjectTask task) {
+    _repository.deleteTask(project, task, _requireUser());
+    notifyListeners();
+  }
+
   void addComment(Project project, ProjectTask task, String message) {
     if (message.trim().isEmpty) return;
     _repository.addComment(project, task, _requireUser(), message);
