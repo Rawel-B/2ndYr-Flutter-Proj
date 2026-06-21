@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-ScolA7Application<Scol_f>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "org.isetn.ScolA7Application",
+            "projectName": "Scol_f",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
